@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <title>reveal.js</title>
+
+    <link rel="stylesheet" href="dist/reset.css" />
+    <link rel="stylesheet" href="dist/reveal.css" />
+    <link rel="stylesheet" href="dist/theme/black.css" />
+    <style>
+      p,
+      li {
+        font-size: 32px;
+      }
+    </style>
+
+    <!-- Theme used for syntax highlighted code -->
+    <link rel="stylesheet" href="plugin/highlight/monokai.css" />
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <section>
+          <div>
+            <h3>Кэширование данных</h3>
+          </div>
+        </section>
+        <section>
+          <h3>Конфиг redis</h3>
+          <pre><code>version: '3.3'
+
+services:
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - /path/to/local/dаta:/root/redis
+      - /path/to/local/redis.conf:/usr/local/etc/redis/redis.conf
+    environment:
+      - REDIS_PASSWORD=my-password
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=16</code></pre>
+        </section>
+        <section>
+          <h3>Великая отвественность</h3>
+          <p>
+            Ваш проект работает быстро и не имеет никаких проблем с
+            производительностью? Забудьте о кешировании.
+          </p>
+        </section>
+        <section>
+          <h3>Как работает кэширование</h3>
+          <p>
+            Когда приложения хочет получить некоторые данные из базы, например
+            сущность Post по его id, оно формирует уникальный ключ кеширования
+            для этого случая ('post_' . $id вполне подходяще) и пытается найти
+            значение по этому ключу в быстром key-value хранилище(memcache,
+            redis, или другое). Если значение там — то приложение использует
+            его. Если нет, забирает его из базы данных и сохраняет в кеш по
+            этому ключу для будущих использований.
+          </p>
+        </section>
+        <section>
+          <h3>Как работает кэширование</h3>
+          <img src="img/cache-1.png" alt="" />
+        </section>
+        <section>
+          <h3>Ограничивайте время кэша</h3>
+          <p>
+            Сохранять значение в кеше навсегда не самая лучшая идея, поскольку
+            эту сущность Post могут обновить, но приложение всегда будет
+            получать старое, закешированное, значение. Поэтому функции
+            кеширования обычно спрашивают какое время это значение хранить.
+          </p>
+        </section>
+        <section>
+          <h3>Пример функции кэширования</h3>
+          <pre><code data-line-numbers>public function getPost($id): Post
+{
+    $key = 'post_' . $id;
+
+    $post = \Cache::get($key);
+    if(!$post) {
+        $post = Post::findOrFail($id);
+        \Cache::put($key, $post, 900);
+    }
+
+    return $post;
+}</code></pre>
+        </section>
+        <section>
+          <h3>Тот же самый пример через функцию remember</h3>
+          <pre><code data-line-numbers="">public function getPost($id): Post
+  {
+      return \Cache::remember('post_' . $id, 900, function() use ($id) {
+          return Post::findOrFail($id);
+      });
+  }</code></pre>
+        </section>
+        <section>
+          <h3>Фасад Cache</h3>
+          <p>
+            По умолчанию фасад Cache хранит данные в файле. Конфиг для работы с
+            кэшированием расположен по адресу config/cache.php. Внутри самого
+            laravel есть поддержка file, database, redis, memcache драйверов
+            кэширования
+          </p>
+        </section>
+        <section>
+          <h3>Подключение Redis в Laravel</h3>
+          <pre><code>composer install predis/predis</code></pre>
+          <pre><code>/.env
+CACHE_DRIVER = redis
+REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+          </code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - чтение</h3>
+          <pre><code>$value = Cache::get('key');
+ 
+$value = Cache::get('key', 'default');</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - чтение с использованием замыкания</h3>
+          <pre><code>$value = Cache::get('key', function () {
+    return DB::table(/* ... */)->get();
+});</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - проверка на существование</h3>
+          <pre><code>$if (Cache::has('key')) {
+    // ...
+}</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - хранение</h3>
+          <pre><code>Cache::put('key', 'value', $seconds = 10);</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - использование разных драйверов</h3>
+          <pre><code>$value = Cache::store('file')->get('foo');
+ 
+Cache::store('redis')->put('bar', 'baz', 600); // 10 Minutes</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - получить и сохранить</h3>
+          <pre><code data-line-numbers="">$value = Cache::remember('users', $seconds, function () {
+    return DB::table('users')->get();
+});</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - получить и удалить</h3>
+          <pre><code>$value = Cache::pull('key');</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - сохранить, если нет</h3>
+          <pre><code>Cache::add('key', 'value', $seconds);</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - хранение предметов навсегда</h3>
+          <pre><code>Cache::forever('key', 'value');</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - удаление</h3>
+          <pre><code>Cache::forget('key');</code></pre>
+        </section>
+        <section>
+          <h3>Стандартные функции Cache - полное очищение кэша</h3>
+          <pre><code>Cache::flush();</code></pre>
+        </section>
+        <section>
+          <h3>Что кешировать?</h3>
+          <p>
+            Первые кандидаты на кеширование — это запросы, которые выполняются
+            очень часто, но их план выполнения не самый простой. Лучший пример —
+            top-5 статей на главной странице, или последние новости. Кеширование
+            таких значений способно сильно улучшить производительность главной
+            страницы.
+          </p>
+        </section>
+        <section>
+          <h3>Что кэшировать?</h3>
+          <p>
+            Обычно, выборка сущностей по id, используя Model::find($id) работает
+            очень быстро, но если эта таблица сильно загружена многочисленными
+            запросами update, insert и delete, уменьшение количества select
+            запросов даст хорошую передышку базе данных. Сущности с отношениями
+            hasMany, которые будут загружаться каждый раз, тоже хорошие
+            кандидаты на кеширование
+          </p>
+        </section>
+        <section>
+          <h3>Инвалидация(протухание) кеша</h3>
+          <p>
+            Протухание ключа через заданное время помогает обновить данные в
+            кеше, но это происходит не сразу. Пользователь может поменять
+            данные, но некоторое время он будет продолжать видеть старую версию
+            их в приложении.
+          </p>
+          <pre><code>Пользователь: Я обновил публикацию, но продолжаю видеть старую версию!
+Разработчик: Пожалуйста, подождите 15 минут(или полчаса, или час)...  </code></pre>
+        </section>
+        <section>
+          <h3>Что с этим можно сделать?</h3>
+        </section>
+        <section>
+          <h3>Инвалидация(протухание) кеша</h3>
+          <p>
+            Это поведение весьма неудобно для пользователей и очевидное решение
+            удалять из кеша старые данные, когда мы их обновили быстро приходит
+            в голову. Этот процесс называется инвалидацией.
+          </p>
+        </section>
+        <section>
+          <h3>Инвалидация пример с обсервером</h3>
+          <pre><code data-line-numbers="">abstract class PostEvent
+{
+    /** @var Post */
+    private $post;
+
+    public function __construct(Post $post) {
+        $this->post = $post;
+    }
+
+    public function getPost(): Post {
+        return $this->post;    
+    }
+}
+
+final class PostSaved extends PostEvent{}
+final class PostDeleted extends PostEvent{} </code></pre>
+        </section>
+        <section>
+          <h3>Инвалидация пример с обсервером</h3>
+          <pre><code data-line-numbers="">class Post extends Model
+{
+    protected $dispatchesEvents = [
+        'saved' => PostSaved::class,
+        'deleted' => PostDeleted::class,
+    ];
+}</code></pre>
+        </section>
+        <section>
+          <h3>Инвалидация пример с обсервером</h3>
+          <pre><code data-line-numbers="">class EventServiceProvider extends ServiceProvider 
+{
+    protected $listen = [
+        PostSaved::class => [
+            ClearPostCache::class,
+        ],
+        PostDeleted::class => [
+            ClearPostCache::class,
+        ],
+    ];
+}
+
+class ClearPostCache
+{
+    public function handle(PostEvent $event)
+    {
+        \Cache::forget('post_' . $event->getPost()->id);
+    }
+}</code></pre>
+        </section>
+        <section>
+          <h3>А как быть со сложными выборками?</h3>
+          <p>
+            Инвалидация списков сущностей, таких как top-5 статей или последних
+            новостей. На такие случае есть несколько вариантов
+          </p>
+        </section>
+        <section>
+          <h3>Вариант 1 со сложной выборкой</h3>
+          <h6>Стратегия "Не инвалидируем"</h6>
+          <p>
+            Просто не трогать эти значения. Обычно, это не приносит никаких
+            проблем. Ничего страшного в том, что новая новость появится в списке
+            последних чуть позже (конечно, если это не большой новостной
+            портал). Но некоторым проектам действительно важно иметь свежие
+            данные в этих списках.
+          </p>
+        </section>
+        <section>
+          <h3>Вариант 2 со сложной выборкой</h3>
+          <h6>Стратегия "Найти и обезвредить"</h6>
+          <p>
+            Можно при каждом обновлении публикации, пытаться найти её в
+            закешированных списках, и если она там есть, удалить это
+            закешированное значение.
+          </p>
+          <pre><code data-line-numbers="">public function getTopPosts()
+{
+    return \Cache::remember('top_posts', 900, function() {
+        return Post::/*формируем запрос получения top-5*/()->get();
+    });
+}
+
+class CheckAndClearTopPostsCache
+{
+    public function handle(PostEvent $event)
+    {
+        $updatedPost = $event->getPost();
+
+        $posts = \Cache::get('top_posts', []);
+        foreach($posts as $post) {
+            if($updatedPost->id == $post->id) {
+                \Cache::forget('top_posts');
+                return;
+            }
+        }
+    }
+}</code></pre>
+        </section>
+        <section>
+          <h3>Вариант 3 со сложной выборкой</h3>
+          <h6>Стратегия "хранить id"</h6>
+          <p>
+            Если порядок элементов в списке неважен, то в кеше можно хранить
+            только id записей. После получения id, можно сформировать список
+            ключей вида 'post_'.$id и получить все значения используя метод
+            Cache::many, который достает много значений из кеша за один запрос
+            (это еще называется multi get).
+          </p>
+        </section>
+        <section>
+          <h3>Инвалидация это сложно</h3>
+          <p>
+            Инвалидация кеша не зря названа одной из двух трудностей в
+            програмировании и весьма трудно в некоторых случаях.
+          </p>
+        </section>
+        <section>
+          <h3>Кеширование отношений</h3>
+          <p>
+            Кеширование сущностей с отношениями требует повышенного внимания.
+          </p>
+          <pre><code>$post = Post::findOrFail($id);
+foreach($post->comments...)</code></pre>
+          <p>
+            Этот код выполняет два SELECT запроса. Получение сущности по id и
+            комментариев по post_id
+          </p>
+        </section>
+        <section>
+          <h3>Кеширование отношений - реализация</h3>
+          <pre><code>public function getPost($id): Post
+{
+    return \Cache::remember('post_' . $id, 900, function() use ($id) {
+        return Post::findOrFail($id);
+    });
+}
+
+$post = getPost($id);
+foreach($post->comments...)</code></pre>
+        </section>
+        <section>
+          <h3>Неочивидность кэширование отношений</h3>
+          <p>
+            Первый запрос был закеширован, а второй — нет. Когда драйвер кеша
+            записывает Post в кеш, comments еще не загружены. Если мы хотим
+            кешировать и их тоже, то мы должны загрузить их вручную
+          </p>
+        </section>
+        <section>
+          <h3>Неочивидность кэширование отношений - реализация</h3>
+          <pre><code>public function getPost($id): Post
+{
+    return \Cache::remember('post_' . $id, 900, function() use ($id) {
+        $post = Post::findOrFail($id);
+        $post->load('comments');
+        return $post;
+    });
+}</code></pre>
+        </section>
+        <section>
+          <h3>Какая проблема?</h3>
+        </section>
+        <section>
+          <h3>Какая проблема? - ответ</h3>
+          <p>
+            Теперь кешируются оба запроса, но мы должны инвалидировать значения
+            'post_'.$id каждый раз когда добавляется комментарий. Это не очень
+            эффективно, поэтому лучше хранить кеш комментариев отдельно
+          </p>
+        </section>
+        <section>
+          <h3>Решение инвалидации и хранение комментариев отдельно</h3>
+          <pre><code data-line-numbers="">public function getPostComments(Post $post)
+{
+    return \Cache::remember('post_comments_' . $post->id,  900,  
+        function() use ($post) {
+            return $post->comments;
+        });
+}
+
+$post = getPost($id);
+$comments = getPostComments($post);
+
+foreach($comments...)</code></pre>
+        </section>
+        <section>
+          <h3>Пару слов про отношения</h3>
+          <p>
+            Иногда сущность и отношение сильно связаны друг с другом и всегда
+            используются вместе (заказ с деталями, публикация с переводом на
+            нужный язык). В этом случае хранить их в одном кеше вполне
+            нормально.
+          </p>
+        </section>
+        <section>
+          <h3>Отдельные классы для ключей</h3>
+          <pre><code data-line-numbers="">final class CacheKeys
+{   
+    public static function postById($postId): string {
+        return 'post_' . $postId;
+    }
+
+    public static function postComments($postId): string {
+        return 'post_comments' . $postId;
+    }
+}
+
+\Cache::remember(CacheKeys::postById($id), 900, function() use ($id) {
+    $post = Post::findOrFail($id);
+});
+
+// ....
+
+\Cache::forget(CacheKeys::postById($id));</code></pre>
+        </section>
+        <section>
+          <h3>Где лучше не использовать кэш?</h3>
+        </section>
+        <section>
+          <h3>Где лучше не использовать кэш?</h3>
+          <p>Не используйте кеш в операциях записи</p>
+          <p>
+            Значение в кеше может быть устаревшим, даже если инвалидация сделана
+            корректно. Небольшой race condition и публикация потеряет изменения,
+            сделанные другим пользователем. Оптимистические блокировки помогут
+            хотя бы не потерять изменения, но количество ошибочных запросов
+            может сильно возрасти
+          </p>
+        </section>
+      </div>
+      <div></div>
+    </div>
+
+    <script src="dist/reveal.js"></script>
+    <script src="plugin/notes/notes.js"></script>
+    <script src="plugin/markdown/markdown.js"></script>
+    <script src="plugin/highlight/highlight.js"></script>
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      // More info about initialization & config:
+      // - https://revealjs.com/initialization/
+      // - https://revealjs.com/config/
+      Reveal.initialize({
+        hash: true,
+        touch: true,
+        // Learn about plugins: https://revealjs.com/plugins/
+        plugins: [RevealMarkdown, RevealHighlight, RevealNotes],
+      });
+
+      // $("pre code").each(function(){
+      //     var html = $(this).html();
+      //     var pattern = html.match(/\s*\n[\t\s]*/);
+      //     $(this).html(html.replace(new RegExp(pattern, "g"),'\n'));
+      // });
+    </script>
+  </body>
+</html>
